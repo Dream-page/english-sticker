@@ -31,7 +31,7 @@
     import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, onSnapshot, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // 🌟 선생님의 파이어베이스 프로젝트 설정 (이미 적용 완료) 🌟
+    // 🌟 선생님의 파이어베이스 프로젝트 설정 🌟
     const myFirebaseConfig = {
       apiKey: "AIzaSyDU4veoMxD-A1dIvGTliKTWGsFKvPVDieM",
       authDomain: "english-note-bb12c.firebaseapp.com",
@@ -58,6 +58,9 @@
       const [activeTab, setActiveTab] = useState(1);
       const [showCelebration, setShowCelebration] = useState(false);
       const [isAnimating, setIsAnimating] = useState(false);
+      
+      // ✅ 현재 상태를 화면에 표시하기 위한 상태값 추가
+      const [statusMsg, setStatusMsg] = useState('🔄 데이터베이스 연결 중...');
 
       // 1. Firebase 인증
       useEffect(() => {
@@ -70,10 +73,14 @@
             }
           } catch (error) {
             console.error("인증 실패:", error);
+            setStatusMsg('❌ 인증 에러: 승인된 도메인 및 익명로그인 설정을 확인하세요 (' + error.code + ')');
           }
         };
         initAuth();
-        const unsubscribe = onAuthStateChanged(auth, setUser);
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+          setUser(currentUser);
+          if (currentUser) setStatusMsg('✅ 연결 성공 (데이터 불러오는 중...)');
+        });
         return () => unsubscribe();
       }, []);
 
@@ -84,6 +91,7 @@
         const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'classes', selectedClass);
         
         const unsubscribe = onSnapshot(docRef, (docSnap) => {
+          setStatusMsg('✅ 연결 성공'); // 데이터 로드 성공
           if (docSnap.exists()) {
             const data = docSnap.data();
             setClassData({
@@ -99,7 +107,10 @@
             setClassData({ balloons: 0, bigStickers: 0 });
             setActiveTab(1);
           }
-        }, (error) => console.error("데이터 불러오기 실패:", error));
+        }, (error) => {
+          console.error("데이터 불러오기 실패:", error);
+          setStatusMsg('❌ DB 권한 에러: Firestore Rules 설정을 확인하세요');
+        });
 
         return () => unsubscribe();
       }, [user, selectedClass]);
@@ -130,7 +141,10 @@
 
       // 4. 버튼 클릭 이벤트 (점수 올리기)
       const handleAddBalloon = async () => {
-        if (!user || isAnimating) return;
+        if (!user || isAnimating) {
+          if (!user) alert("데이터베이스와 아직 연결되지 않았습니다. 하단의 상태 메시지를 확인해 주세요.");
+          return;
+        }
         setIsAnimating(true);
 
         let newBalloons = classData.balloons + 1;
@@ -143,16 +157,21 @@
           triggeredConfetti = true;
         }
 
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'classes', selectedClass);
-        await setDoc(docRef, { balloons: newBalloons, bigStickers: newBigStickers }, { merge: true });
+        try {
+          const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'classes', selectedClass);
+          await setDoc(docRef, { balloons: newBalloons, bigStickers: newBigStickers }, { merge: true });
 
-        if (triggeredConfetti) {
-          if (newBigStickers >= 100) {
-            setShowCelebration(true);
-            fireBigConfetti();
-          } else {
-            fireSmallConfetti();
+          if (triggeredConfetti) {
+            if (newBigStickers >= 100) {
+              setShowCelebration(true);
+              fireBigConfetti();
+            } else {
+              fireSmallConfetti();
+            }
           }
+        } catch (error) {
+          console.error("저장 에러:", error);
+          setStatusMsg('❌ 쓰기 에러: Firestore Rules 설정을 확인하세요');
         }
 
         setTimeout(() => setIsAnimating(false), 300);
@@ -179,6 +198,11 @@
             @import url('https://fonts.googleapis.com/css2?family=Jua&display=swap');
             .font-jua { font-family: 'Jua', sans-serif; }
           `}</style>
+
+          {/* 연결 상태 표시 (디버깅용) */}
+          <div className="fixed bottom-4 left-4 z-50 bg-white/90 px-4 py-2 rounded-full text-sm font-sans shadow-md border border-gray-200 text-gray-700 pointer-events-none">
+            {statusMsg}
+          </div>
 
           <div className="absolute top-2 right-2 opacity-5 hover:opacity-100 transition-opacity bg-white border border-gray-200 p-1 rounded-lg flex gap-1 z-40 shadow-sm">
             <button onClick={() => handleTeacherAdjust('balloon', 1)} className="px-2 py-1 bg-gray-100 text-xs rounded hover:bg-gray-200">+B</button>
